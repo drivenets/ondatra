@@ -1,0 +1,192 @@
+// Copyright 2021 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package dnbind provides an Ondatra binding for Drivenets devices.
+package dnbind
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net"
+	"strings"
+	"time"
+
+	"github.com/pborman/uuid"
+	"golang.org/x/crypto/ssh"
+
+	"github.com/openconfig/ondatra/binding"
+	opb "github.com/openconfig/ondatra/proto"
+)
+
+// New returns a new Drivenets bind instance.
+func New(cfg *Config) (*Bind, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
+
+	return &Bind{cfg: cfg}, nil
+}
+
+// Bind implements the ondatra Binding interface for Drivenets
+type Bind struct {
+	binding.Binding
+	cfg *Config
+}
+
+// Reserve implements the binding Reserve method by finding nodes and links in
+// the topology specified in the config file that match the requested testbed.
+func (b *Bind) Reserve(ctx context.Context, tb *opb.Testbed, runTime time.Duration, waitTime time.Duration, partial map[string]string) (*binding.Reservation, error) {
+
+	res := &binding.Reservation{
+		ID:   uuid.New(),
+		DUTs: make(map[string]binding.DUT),
+		ATEs: make(map[string]binding.ATE),
+	}
+
+	for node, _ := range b.cfg.Credentials.Node {
+		dims := &binding.Dims{
+			Name:            node,
+			Vendor:          opb.Device_VENDOR_UNSPECIFIED,
+			HardwareModel:   "",
+			SoftwareVersion: "",
+			Ports:           make(map[string]*binding.Port),
+		}
+
+		dnDut := dnDUT{AbstractDUT: &binding.AbstractDUT{dims}, bind: b}
+		res.DUTs[node] = &dnDut
+	}
+
+	return res, nil
+}
+
+// Release is a no-op because there's no need to reserve local VMs.
+func (b *Bind) Release(context.Context) error {
+	return nil
+}
+
+type dnDUT struct {
+	*binding.AbstractDUT
+	bind *Bind
+}
+
+func (dut *dnDUT) DialCLI(ctx context.Context) (binding.CLIClient, error) {
+	up := dut.bind.cfg.Credentials.Node[dut.Name()]
+
+	sshConfig := &ssh.ClientConfig{
+		User: up.Username,
+		Auth: []ssh.AuthMethod{ssh.Password(up.Password)},
+		//Timeout:         5 * time.Second,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	client, err := ssh.Dial("tcp", net.JoinHostPort(dut.Name(), "22"), sshConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, err
+	}
+
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          0,     // disable echoing
+		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
+		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+	}
+
+	if err := session.RequestPty("xterm", 80, 40, modes); err != nil {
+		return nil, fmt.Errorf("request for pseudo terminal failed: %s", err)
+	}
+
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("request for stdin pipe for %s failed: %s", dut.Name(), err)
+	}
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("request for stdout pipe for %s failed: %s", dut.Name(), err)
+	}
+
+	if err := session.Shell(); err != nil {
+		return nil, fmt.Errorf("request for terminal shell failed: %s", err)
+	}
+
+	cli := &dnCLI{
+		dut:     dut,
+		session: session,
+		stdin:   stdin,
+		stdout:  stdout,
+	}
+
+	// wait for prompt
+	if _, err = cli.CommandResult(ctx); err != nil {
+		return nil, err
+	}
+
+	return cli, nil
+}
+
+type dnCLI struct {
+	*binding.AbstractCLIClient
+	dut     *dnDUT
+	session *ssh.Session
+	stdin   io.WriteCloser
+	stdout  io.Reader
+}
+
+func (c *dnCLI) RunCommand(ctx context.Context, cmd string) (binding.CommandResult, error) {
+	c.stdin.Write([]byte(cmd + "\n"))
+
+	return c.CommandResult(ctx)
+}
+
+func (c *dnCLI) CommandResult(ctx context.Context) (r cmdResult, err error) {
+	buffer := make([]byte, 10000000)
+
+	for {
+		byteCount, err := c.stdout.Read(buffer)
+		if err != nil {
+			return r, err
+		}
+		lines := strings.Split(string(buffer[:byteCount]), "\n")
+
+		for _, line := range lines {
+			line = strings.TrimRight(line, " ")
+			if len(line) > 0 {
+				if line[len(line)-1:] == "#" {
+					return r, nil
+				}
+			}
+			r.output += line + "\n"
+		}
+	}
+}
+
+type cmdResult struct {
+	*binding.AbstractCommandResult
+	output, error string
+}
+
+// Output logs a fatal unimplemented error.
+func (r cmdResult) Output() string {
+	return r.output
+}
+
+// Error logs a fatal unimplemented error.
+func (r cmdResult) Error() string {
+	return r.error
+}
