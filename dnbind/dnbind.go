@@ -58,7 +58,7 @@ func (b *Bind) Reserve(ctx context.Context, tb *opb.Testbed, runTime time.Durati
 	for node, _ := range b.cfg.Credentials.Node {
 		dims := &binding.Dims{
 			Name:            node,
-			Vendor:          opb.Device_VENDOR_UNSPECIFIED,
+			Vendor:          opb.Device_DRIVENETS,
 			HardwareModel:   "",
 			SoftwareVersion: "",
 			Ports:           make(map[string]*binding.Port),
