@@ -64,7 +64,7 @@ func (b *Bind) Reserve(ctx context.Context, tb *opb.Testbed, runTime time.Durati
 			Ports:           make(map[string]*binding.Port),
 		}
 
-		dnDut := dnDUT{AbstractDUT: &binding.AbstractDUT{dims}, bind: b}
+		dnDut := dnDUT{AbstractDUT: &binding.AbstractDUT{dims}, bind: b, cli: nil}
 		res.DUTs[node] = &dnDut
 	}
 
@@ -79,9 +79,14 @@ func (b *Bind) Release(context.Context) error {
 type dnDUT struct {
 	*binding.AbstractDUT
 	bind *Bind
+	cli  *dnCLI
 }
 
 func (dut *dnDUT) DialCLI(ctx context.Context) (binding.CLIClient, error) {
+	if dut.cli != nil {
+		return dut.cli, nil
+	}
+
 	up := dut.bind.cfg.Credentials.Node[dut.Name()]
 
 	sshConfig := &ssh.ClientConfig{
@@ -125,24 +130,40 @@ func (dut *dnDUT) DialCLI(ctx context.Context) (binding.CLIClient, error) {
 		return nil, fmt.Errorf("request for terminal shell failed: %s", err)
 	}
 
-	cli := &dnCLI{
-		dut:     dut,
+	dut.cli = &dnCLI{
 		session: session,
 		stdin:   stdin,
 		stdout:  stdout,
 	}
 
 	// wait for prompt
-	if _, err = cli.CommandResult(ctx); err != nil {
+	if _, err = dut.cli.CommandResult(ctx); err != nil {
 		return nil, err
 	}
 
-	return cli, nil
+	return dut.cli, nil
+}
+
+// TODO: support for reset parameter
+func (dut *dnDUT) PushConfig(ctx context.Context, config string, reset bool) error {
+	if _, err := dut.DialCLI(ctx); err != nil {
+		return err
+	}
+
+	extras := []string{"configure", "commit", "!"}
+	commands := append(extras[:1], append(strings.Split(config, "\n"), extras[1:]...)...)
+
+	for _, command := range commands {
+		if _, err := dut.cli.RunCommand(ctx, command); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 type dnCLI struct {
 	*binding.AbstractCLIClient
-	dut     *dnDUT
 	session *ssh.Session
 	stdin   io.WriteCloser
 	stdout  io.Reader

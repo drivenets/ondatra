@@ -61,6 +61,29 @@ func RunDnBindTests(m *testing.M, newBindFn func() (binding.Binding, error)) err
 			return err
 		}
 		fmt.Println(res.Output())
+
+		config := `interfaces
+					 ge100-0/0/0.123
+					   admin-state enabled
+					   vlan-id 123
+					 !
+				   !`
+		dut.PushConfig(ctx, config, false)
+
+		res, err = cli.RunCommand(ctx, "show interfaces ge100-0/0/0.123")
+		if err != nil {
+			return err
+		}
+		fmt.Println(res.Output())
+
+		config = `no interfaces ge100-0/0/0.123`
+		dut.PushConfig(ctx, config, false)
+
+		res, err = cli.RunCommand(ctx, "show interfaces ge100-0/0/0.123")
+		if err != nil {
+			return err
+		}
+		fmt.Println(res.Output())
 	}
 
 	return nil
