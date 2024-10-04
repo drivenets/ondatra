@@ -16,51 +16,43 @@ package dnbind_test
 
 import (
 	"context"
-	"fmt"
+	"path/filepath"
 	"testing"
 
-	"github.com/openconfig/ondatra/binding"
+	"github.com/openconfig/ondatra/config"
 	dninit "github.com/openconfig/ondatra/dnbind/init"
 	"github.com/openconfig/ondatra/internal/flags"
 )
 
-func TestMain(m *testing.M) {
-	err := RunDnBindTests(m, dninit.Init)
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-
-func RunDnBindTests(m *testing.M, newBindFn func() (binding.Binding, error)) error {
+func TestDrivenetsBinding(t *testing.T) {
 	_, err := flags.Parse()
 	if err != nil {
-		return fmt.Errorf("failed to parse flags: %w", err)
+		t.Fatalf("failed to parse flags: %s", err.Error())
 	}
 
-	fmt.Println("=== RUN   DnBindTests")
-	bind, err := newBindFn()
+	bind, err := dninit.Init()
 	if err != nil {
-		return fmt.Errorf("failed to create binding: %w", err)
+		t.Fatalf("failed to create binding: %s", err.Error())
 	}
 
 	ctx := context.Background()
 
 	res, err := bind.Reserve(ctx, nil, 0, 0, nil)
 	if err != nil {
-		return fmt.Errorf("failed to reserve binding: %w", err)
+		t.Fatalf("failed to reserve binding: %s", err.Error())
 	}
 
 	for _, dut := range res.DUTs {
 		cli, err := dut.DialCLI(ctx)
 		if err != nil {
-			return err
+			t.Fatal(err.Error())
 		}
 
 		res, err := cli.RunCommand(ctx, "show system")
 		if err != nil {
-			return err
+			t.Fatal(err.Error())
 		}
-		fmt.Println(res.Output())
+		t.Log(res.Output())
 
 		config := `interfaces
 					 ge100-0/0/0.123
@@ -72,19 +64,95 @@ func RunDnBindTests(m *testing.M, newBindFn func() (binding.Binding, error)) err
 
 		res, err = cli.RunCommand(ctx, "show interfaces ge100-0/0/0.123")
 		if err != nil {
-			return err
+			t.Fatal(err.Error())
 		}
-		fmt.Println(res.Output())
+		t.Log(res.Output())
 
 		config = `no interfaces ge100-0/0/0.123`
 		dut.PushConfig(ctx, config, false)
 
 		res, err = cli.RunCommand(ctx, "show interfaces ge100-0/0/0.123")
 		if err != nil {
-			return err
+			t.Fatal(err.Error())
 		}
-		fmt.Println(res.Output())
+		t.Log(res.Output())
+	}
+}
+
+// TODO: check push config outputs?
+func TestDrivenetsVendorConfig(t *testing.T) {
+	_, err := flags.Parse()
+	if err != nil {
+		t.Fatalf("failed to parse flags: %s", err.Error())
 	}
 
-	return nil
+	bind, err := dninit.Init()
+	if err != nil {
+		t.Fatalf("failed to create binding: %s", err.Error())
+	}
+
+	ctx := context.Background()
+
+	res, err := bind.Reserve(ctx, nil, 0, 0, nil)
+	if err != nil {
+		t.Fatalf("failed to reserve binding: %s", err.Error())
+	}
+
+	for _, dut := range res.DUTs {
+		// updates DUT config with static config below
+		config.NewVendorConfig(dut).
+			WithDrivenetsText(
+				`interfaces
+				   ge100-0/0/0.321
+				     admin-state enabled
+					 vlan-id 321
+				   !
+				 !`).
+			Append(t)
+
+		// updates DUT config with replace config below
+		config.NewVendorConfig(dut).
+			WithDrivenetsText(
+				`interfaces
+				   ge100-0/0/0.{{ var "vlan" }}
+				     admin-state {{ var "state" }}
+					 vlan-id {{ var "vlan" }}
+				   !
+				 !`).
+			WithVarMap(map[string]string{
+				"vlan":  "888",
+				"state": "disabled",
+			}).
+			Append(t)
+
+		// update DUT with multi-vendor config
+		config.NewVendorConfig(dut).
+			WithCienaText(`should skip this`).
+			WithCiscoText(`should also skip this`).
+			WithAristaText(`should also skip this`).
+			WithJuniperText(`should also skip this`).
+			WithDrivenetsText(
+				`interfaces
+				   ge100-0/0/0.333
+				     admin-state enabled
+					 vlan-id 333
+				   !
+				 !`).
+			Append(t)
+
+		// replace DUT config with static config below
+		config.NewVendorConfig(dut).
+			WithDrivenetsText(
+				`interfaces
+				   ge100-0/0/0
+				     admin-state enabled
+				   !
+				!`).
+			Push(t)
+
+		// replace DUT config with static config below
+		config.NewVendorConfig(dut).
+			WithDrivenetsFile(filepath.Join("testdata", "example_config_1.txt")).
+			Push(t)
+	}
 }
