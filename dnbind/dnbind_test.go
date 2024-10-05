@@ -17,8 +17,10 @@ package dnbind_test
 import (
 	"context"
 	"path/filepath"
+	"regexp"
 	"testing"
 
+	"github.com/openconfig/ondatra/cli"
 	"github.com/openconfig/ondatra/config"
 	dninit "github.com/openconfig/ondatra/dnbind/init"
 	"github.com/openconfig/ondatra/internal/flags"
@@ -154,5 +156,34 @@ func TestDrivenetsVendorConfig(t *testing.T) {
 		config.NewVendorConfig(dut).
 			WithDrivenetsFile(filepath.Join("testdata", "example_config_1.txt")).
 			Push(t)
+	}
+}
+
+func TestDrivenetsCLI(t *testing.T) {
+	_, err := flags.Parse()
+	if err != nil {
+		t.Fatalf("failed to parse flags: %s", err.Error())
+	}
+
+	bind, err := dninit.Init()
+	if err != nil {
+		t.Fatalf("failed to create binding: %s", err.Error())
+	}
+
+	ctx := context.Background()
+
+	res, err := bind.Reserve(ctx, nil, 0, 0, nil)
+	if err != nil {
+		t.Fatalf("failed to reserve binding: %s", err.Error())
+	}
+
+	sysname, _ := regexp.Compile("System Name: w")
+	for _, dut := range res.DUTs {
+		cli := cli.New(dut)
+
+		result := cli.RunResult(t, "show system name")
+		if !sysname.MatchString(result.Output()) {
+			t.Fatalf("unexpected command output: %s", result)
+		}
 	}
 }
