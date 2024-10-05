@@ -150,11 +150,61 @@ func (dut *dnDUT) PushConfig(ctx context.Context, config string, reset bool) err
 		return err
 	}
 
+	if reset {
+		if err := dut.ResetConfig(ctx); err != nil {
+			return err
+		}
+	}
+
 	extras := []string{"configure", "commit", "!"}
 	commands := append(extras[:1], append(strings.Split(config, "\n"), extras[1:]...)...)
 
 	for _, command := range commands {
 		if _, err := dut.cli.RunCommand(ctx, command); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (dut *dnDUT) ResetConfig(ctx context.Context) error {
+	var res binding.CommandResult
+	var err error
+
+	if _, err = dut.DialCLI(ctx); err != nil {
+		return err
+	}
+
+	commands := []string{"configure", "no ?"}
+
+	for _, command := range commands {
+		if res, err = dut.cli.RunCommand(ctx, command); err != nil {
+			return err
+		}
+	}
+
+	options := strings.Split(res.Output(), "\n")
+	for _, option := range options {
+		words := strings.Fields(option)
+		if len(words) > 0 && len(words[0]) > 0 {
+			if words[0] == "system" {
+				continue
+			}
+			if words[0][len(words[0])-1:] == "#" {
+				break
+			}
+			command := "no " + words[0]
+			if _, err = dut.cli.RunCommand(ctx, command); err != nil {
+				return err
+			}
+		}
+	}
+
+	commands = []string{"commit", "end"}
+
+	for _, command := range commands {
+		if _, err = dut.cli.RunCommand(ctx, command); err != nil {
 			return err
 		}
 	}
