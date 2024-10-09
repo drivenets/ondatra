@@ -279,6 +279,10 @@ func (c *dnCLI) CommandResult(ctx context.Context) (r cmdResult, err error) {
 				}
 			}
 			r.output += line + "\n"
+			if strings.HasPrefix(line, "ERROR:") {
+				r.error = r.output
+				r.output = ""
+			}
 		}
 	}
 }

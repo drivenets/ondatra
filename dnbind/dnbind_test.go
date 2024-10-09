@@ -79,7 +79,7 @@ func TestDrivenetsBinding(t *testing.T) {
 		if err != nil {
 			t.Fatal(err.Error())
 		}
-		t.Log(res.Output())
+		t.Log(res.Error())
 	}
 }
 
