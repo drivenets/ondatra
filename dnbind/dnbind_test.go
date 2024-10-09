@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/openconfig/ondatra/cli"
 	"github.com/openconfig/ondatra/config"
@@ -37,7 +38,8 @@ func TestDrivenetsBinding(t *testing.T) {
 		t.Fatalf("failed to create binding: %s", err.Error())
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	res, err := bind.Reserve(ctx, nil, 0, 0, nil)
 	if err != nil {

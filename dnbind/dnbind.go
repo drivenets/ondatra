@@ -26,6 +26,7 @@ import (
 	"github.com/pborman/uuid"
 	"golang.org/x/crypto/ssh"
 
+	log "github.com/golang/glog"
 	"github.com/openconfig/ondatra/binding"
 	opb "github.com/openconfig/ondatra/proto"
 )
@@ -89,22 +90,19 @@ func (dut *dnDUT) DialCLI(ctx context.Context) (binding.CLIClient, error) {
 
 	up := dut.bind.cfg.Credentials.Node[dut.Name()]
 
+	var timeout time.Duration = 0
+	deadline, ok := ctx.Deadline()
+	if ok {
+		timeout = time.Until(deadline)
+	}
+
 	sshConfig := &ssh.ClientConfig{
-		User: up.Username,
-		Auth: []ssh.AuthMethod{ssh.Password(up.Password)},
-		//Timeout:         5 * time.Second,
+		User:            up.Username,
+		Auth:            []ssh.AuthMethod{ssh.Password(up.Password)},
+		Timeout:         timeout,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
-
-	client, err := ssh.Dial("tcp", net.JoinHostPort(dut.Name(), "22"), sshConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	session, err := client.NewSession()
-	if err != nil {
-		return nil, err
-	}
+	addr := net.JoinHostPort(dut.Name(), "22")
 
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          0,     // disable echoing
@@ -112,36 +110,58 @@ func (dut *dnDUT) DialCLI(ctx context.Context) (binding.CLIClient, error) {
 		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
 	}
 
-	if err := session.RequestPty("xterm", 80, 40, modes); err != nil {
-		return nil, fmt.Errorf("request for pseudo terminal failed: %s", err)
+	dialCli := func() (err error) {
+		dut.cli = &dnCLI{}
+
+		if dut.cli.client, err = ssh.Dial("tcp", addr, sshConfig); err != nil {
+			return err
+		}
+
+		if dut.cli.session, err = dut.cli.client.NewSession(); err != nil {
+			return err
+		}
+
+		if err = dut.cli.session.RequestPty("xterm", 80, 40, modes); err != nil {
+			return err
+		}
+
+		if dut.cli.stdin, err = dut.cli.session.StdinPipe(); err != nil {
+			return err
+		}
+
+		if dut.cli.stdout, err = dut.cli.session.StdoutPipe(); err != nil {
+			return err
+		}
+
+		if err = dut.cli.session.Shell(); err != nil {
+			return err
+		}
+
+		return nil
 	}
 
-	stdin, err := session.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("request for stdin pipe for %s failed: %s", dut.Name(), err)
-	}
+	var err error
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, err
+		default:
+			if err = dialCli(); err != nil {
+				dut.cli.Close()
+				log.Errorf("%s: %s; retrying for %s\n", dut.Name(),
+					err, time.Until(deadline).Round(time.Millisecond))
+				time.Sleep(time.Millisecond * 1000)
+				break
+			}
 
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("request for stdout pipe for %s failed: %s", dut.Name(), err)
-	}
+			// wait for prompt
+			if _, err = dut.cli.CommandResult(ctx); err != nil {
+				return nil, err
+			}
 
-	if err := session.Shell(); err != nil {
-		return nil, fmt.Errorf("request for terminal shell failed: %s", err)
+			return dut.cli, nil
+		}
 	}
-
-	dut.cli = &dnCLI{
-		session: session,
-		stdin:   stdin,
-		stdout:  stdout,
-	}
-
-	// wait for prompt
-	if _, err = dut.cli.CommandResult(ctx); err != nil {
-		return nil, err
-	}
-
-	return dut.cli, nil
 }
 
 // TODO: support for reset parameter
@@ -214,13 +234,29 @@ func (dut *dnDUT) ResetConfig(ctx context.Context) error {
 
 type dnCLI struct {
 	*binding.AbstractCLIClient
+	client  *ssh.Client
 	session *ssh.Session
 	stdin   io.WriteCloser
 	stdout  io.Reader
 }
 
+func (c *dnCLI) Close() error {
+	if c.stdin != nil {
+		c.stdin.Close()
+	}
+	if c.session != nil {
+		c.session.Close()
+	}
+	if c.client != nil {
+		c.client.Close()
+	}
+	return nil
+}
+
 func (c *dnCLI) RunCommand(ctx context.Context, cmd string) (binding.CommandResult, error) {
-	c.stdin.Write([]byte(cmd + "\n"))
+	if _, err := c.stdin.Write([]byte(cmd + "\n")); err != nil {
+		return nil, err
+	}
 
 	return c.CommandResult(ctx)
 }
