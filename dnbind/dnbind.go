@@ -17,6 +17,7 @@ package dnbind
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -164,69 +165,44 @@ func (dut *dnDUT) DialCLI(ctx context.Context) (binding.CLIClient, error) {
 	}
 }
 
-// TODO: support for reset parameter
 func (dut *dnDUT) PushConfig(ctx context.Context, config string, reset bool) error {
 	if _, err := dut.DialCLI(ctx); err != nil {
 		return err
 	}
 
-	if reset {
-		if err := dut.ResetConfig(ctx); err != nil {
+	check := func(res binding.CommandResult, err error) error {
+		if err == nil && len(res.Error()) == 0 {
+			return nil
+		}
+		// revert current changes
+		dut.cli.RunCommand(ctx, "rollback 0")
+		// exit configure menu
+		dut.cli.RunCommand(ctx, "end")
+		// propagate error or stderr
+		if err != nil {
 			return err
 		}
+		return errors.New(res.Error())
 	}
 
-	extras := []string{"configure", "commit", "!"}
-	commands := append(extras[:1], append(strings.Split(config, "\n"), extras[1:]...)...)
+	commands := []string{"configure"}
+	if reset {
+		commands = append(commands, "load override factory-default")
+	}
+	commands = append(commands, strings.Split(config, "\n")...)
 
 	for _, command := range commands {
-		if _, err := dut.cli.RunCommand(ctx, command); err != nil {
+		if err := check(dut.cli.RunCommand(ctx, command)); err != nil {
 			return err
 		}
 	}
 
-	return nil
-}
-
-func (dut *dnDUT) ResetConfig(ctx context.Context) error {
-	var res binding.CommandResult
-	var err error
-
-	if _, err = dut.DialCLI(ctx); err != nil {
+	if err := check(dut.cli.RunCommand(ctx, "commit check")); err != nil {
 		return err
 	}
 
-	commands := []string{"configure", "no ?"}
-
-	for _, command := range commands {
-		if res, err = dut.cli.RunCommand(ctx, command); err != nil {
-			return err
-		}
-	}
-
-	options := strings.Split(res.Output(), "\n")
-	for _, option := range options {
-		words := strings.Fields(option)
-		if len(words) > 0 && len(words[0]) > 0 {
-			if words[0] == "system" {
-				continue
-			}
-			if words[0][len(words[0])-1:] == "#" {
-				break
-			}
-			command := "no " + words[0]
-			if _, err = dut.cli.RunCommand(ctx, command); err != nil {
-				return err
-			}
-		}
-	}
-
-	commands = []string{"commit", "end"}
-
-	for _, command := range commands {
-		if _, err = dut.cli.RunCommand(ctx, command); err != nil {
-			return err
-		}
+	if err := check(dut.cli.RunCommand(ctx, "commit and-exit")); err != nil {
+		return err
 	}
 
 	return nil
@@ -275,6 +251,7 @@ func (c *dnCLI) CommandResult(ctx context.Context) (r cmdResult, err error) {
 			line = strings.TrimRight(line, " ")
 			if len(line) > 0 {
 				if line[len(line)-1:] == "#" {
+					log.Infof("DNOS prompt: %s\n", line)
 					return r, nil
 				}
 			}
