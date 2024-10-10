@@ -16,6 +16,8 @@ package dnbind_test
 
 import (
 	"context"
+	"flag"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,14 +26,21 @@ import (
 	"github.com/openconfig/ondatra/cli"
 	"github.com/openconfig/ondatra/config"
 	dninit "github.com/openconfig/ondatra/dnbind/init"
-	"github.com/openconfig/ondatra/internal/flags"
 )
 
-func TestDrivenetsBinding(t *testing.T) {
-	_, err := flags.Parse()
+func emptyTestbed(t *testing.T) {
+	emptyTB, err := os.CreateTemp(t.TempDir(), "*.textproto")
 	if err != nil {
-		t.Fatalf("failed to parse flags: %s", err.Error())
+		t.Fatalf("Failed to create temp file: %v", err)
 	}
+	if err := emptyTB.Close(); err != nil {
+		t.Errorf("Failed to close temp file: %v", err)
+	}
+	flag.Set("testbed", emptyTB.Name())
+}
+
+func TestDrivenetsBinding(t *testing.T) {
+	emptyTestbed(t)
 
 	bind, err := dninit.Init()
 	if err != nil {
@@ -85,10 +94,7 @@ func TestDrivenetsBinding(t *testing.T) {
 
 // TODO: check push config outputs?
 func TestDrivenetsVendorConfig(t *testing.T) {
-	_, err := flags.Parse()
-	if err != nil {
-		t.Fatalf("failed to parse flags: %s", err.Error())
-	}
+	emptyTestbed(t)
 
 	bind, err := dninit.Init()
 	if err != nil {
@@ -164,10 +170,7 @@ func TestDrivenetsVendorConfig(t *testing.T) {
 }
 
 func TestDrivenetsCLI(t *testing.T) {
-	_, err := flags.Parse()
-	if err != nil {
-		t.Fatalf("failed to parse flags: %s", err.Error())
-	}
+	emptyTestbed(t)
 
 	bind, err := dninit.Init()
 	if err != nil {
