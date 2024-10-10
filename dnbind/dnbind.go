@@ -170,6 +170,8 @@ func (dut *dnDUT) PushConfig(ctx context.Context, config string, reset bool) err
 		return err
 	}
 
+	log.Infof("Pushing config: \"%s\"", config)
+
 	check := func(res binding.CommandResult, err error) error {
 		if err == nil && len(res.Error()) == 0 {
 			return nil

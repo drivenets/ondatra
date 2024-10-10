@@ -150,8 +150,10 @@ func TestDrivenetsVendorConfig(t *testing.T) {
 				`interfaces
 				   ge100-0/0/0
 				     admin-state enabled
+					 description {{ var "desc" }}
 				   !
 				!`).
+			WithVarValue("desc", "ondatra").
 			Push(t)
 
 		// replace DUT config with static config below
