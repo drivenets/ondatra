@@ -17,7 +17,7 @@ package dnbind_test
 import (
 	"context"
 	"path/filepath"
-	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,13 +179,24 @@ func TestDrivenetsCLI(t *testing.T) {
 		t.Fatalf("failed to reserve binding: %s", err.Error())
 	}
 
-	sysname, _ := regexp.Compile("System Name: w")
 	for _, dut := range res.DUTs {
 		cli := cli.New(dut)
 
 		result := cli.RunResult(t, "show system name")
-		if !sysname.MatchString(result.Output()) {
-			t.Fatalf("unexpected command output: %s", result)
+		if !strings.Contains(result.Output(), "System Name: ") {
+			t.Fatalf("unexpected command output: stdout: %s stderr: %s",
+				result.Output(), result.Error())
+		}
+
+		result = cli.RunResult(t, "show interfaces ge100-0/0/a")
+		if len(result.Error()) == 0 {
+			t.Fatalf("unexpected command output: stdout: %s stderr: %s",
+				result.Output(), result.Error())
+		}
+
+		stdout := cli.Run(t, "show system name")
+		if !strings.Contains(stdout, "System Name: ") {
+			t.Fatalf("unexpected command output: %s", stdout)
 		}
 	}
 }
