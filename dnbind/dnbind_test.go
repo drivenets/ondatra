@@ -12,48 +12,59 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dnbind_test
+package dnbind
 
 import (
 	"context"
-	"flag"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/openconfig/ondatra/binding"
 	"github.com/openconfig/ondatra/cli"
 	"github.com/openconfig/ondatra/config"
-	dninit "github.com/openconfig/ondatra/dnbind/init"
+	"github.com/openconfig/ondatra/dnbind/creds"
+	opb "github.com/openconfig/ondatra/proto"
 )
 
-func emptyTestbed(t *testing.T) {
-	emptyTB, err := os.CreateTemp(t.TempDir(), "*.textproto")
+var (
+	credFlags = creds.DefineFlags()
+)
+
+// requires passing DUT credentials via --node_creds=hostname/user/pass
+func mockReserve() (*binding.Reservation, error) {
+	creds, err := credFlags.Parse()
 	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
+		return nil, err
 	}
-	if err := emptyTB.Close(); err != nil {
-		t.Errorf("Failed to close temp file: %v", err)
+
+	res := &binding.Reservation{
+		DUTs: make(map[string]binding.DUT),
 	}
-	flag.Set("testbed", emptyTB.Name())
+
+	for node, _ := range creds.Node {
+		dims := &binding.Dims{
+			Name:   node,
+			Vendor: opb.Device_DRIVENETS,
+		}
+		res.DUTs[node] = &dnDUT{
+			AbstractDUT: &binding.AbstractDUT{Dims: dims},
+			bind:        &Bind{cfg: &Config{Credentials: creds}},
+		}
+	}
+
+	return res, nil
 }
 
 func TestDrivenetsBinding(t *testing.T) {
-	emptyTestbed(t)
-
-	bind, err := dninit.Init()
+	res, err := mockReserve()
 	if err != nil {
 		t.Fatalf("failed to create binding: %s", err.Error())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
-	res, err := bind.Reserve(ctx, nil, 0, 0, nil)
-	if err != nil {
-		t.Fatalf("failed to reserve binding: %s", err.Error())
-	}
 
 	for _, dut := range res.DUTs {
 		cli, err := dut.DialCLI(ctx)
@@ -94,18 +105,9 @@ func TestDrivenetsBinding(t *testing.T) {
 
 // TODO: check push config outputs?
 func TestDrivenetsVendorConfig(t *testing.T) {
-	emptyTestbed(t)
-
-	bind, err := dninit.Init()
+	res, err := mockReserve()
 	if err != nil {
 		t.Fatalf("failed to create binding: %s", err.Error())
-	}
-
-	ctx := context.Background()
-
-	res, err := bind.Reserve(ctx, nil, 0, 0, nil)
-	if err != nil {
-		t.Fatalf("failed to reserve binding: %s", err.Error())
 	}
 
 	for _, dut := range res.DUTs {
@@ -170,18 +172,9 @@ func TestDrivenetsVendorConfig(t *testing.T) {
 }
 
 func TestDrivenetsCLI(t *testing.T) {
-	emptyTestbed(t)
-
-	bind, err := dninit.Init()
+	res, err := mockReserve()
 	if err != nil {
 		t.Fatalf("failed to create binding: %s", err.Error())
-	}
-
-	ctx := context.Background()
-
-	res, err := bind.Reserve(ctx, nil, 0, 0, nil)
-	if err != nil {
-		t.Fatalf("failed to reserve binding: %s", err.Error())
 	}
 
 	for _, dut := range res.DUTs {
