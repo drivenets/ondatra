@@ -23,8 +23,8 @@ import (
 
 // UserPass is a username/password combination.
 type UserPass struct {
-	Username string
-	Password string
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 func (up *UserPass) String() string {

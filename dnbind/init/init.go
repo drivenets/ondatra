@@ -16,13 +16,16 @@
 package init
 
 import (
+	"flag"
+
 	"github.com/openconfig/ondatra/binding"
 	"github.com/openconfig/ondatra/dnbind"
 	"github.com/openconfig/ondatra/dnbind/creds"
 )
 
 var (
-	credFlags = creds.DefineFlags()
+	configFile = flag.String("config", "", "YAML config file")
+	credFlags  = creds.DefineFlags()
 )
 
 // Init provides a generator for a Drivenets bind instance.
@@ -31,7 +34,11 @@ func Init() (binding.Binding, error) {
 	var cfg *dnbind.Config
 	var err error
 
-	cfg, err = parseFlags()
+	if *configFile != "" {
+		cfg, err = dnbind.ParseConfigFile(*configFile)
+	} else {
+		cfg, err = parseFlags()
+	}
 	if err != nil {
 		return nil, err
 	}

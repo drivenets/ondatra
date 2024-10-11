@@ -16,20 +16,57 @@ package dnbind
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/openconfig/ondatra/dnbind/creds"
+	"gopkg.in/yaml.v2"
 )
+
+type Node struct {
+	Id              string         `yaml:"id"`
+	Hostname        string         `yaml:"hostname"`
+	Vendor          string         `yaml:"vendor,omitempty"`
+	HardwareModel   string         `yaml:"model,omitempty"`
+	SoftwareVersion string         `yaml:"version,omitempty"`
+	Credentials     creds.UserPass `yaml:"credentials,omitempty"`
+}
 
 // Config contains parameters to configure the Drivenets binding.
 type Config struct {
-	Credentials *creds.Credentials `yaml:"credentials"`
+	Credentials *creds.Credentials
+	Nodes       []Node `yaml:"nodes"`
 }
 
 func (c *Config) String() string {
 	return fmt.Sprintf("%+v", *c)
 }
 
-// ValidateConfig checks if the provided config is valid.
-func ValidateConfig(cfg *Config) error {
+func (c *Config) Lookup(id string) *Node {
+	for _, node := range c.Nodes {
+		if node.Id == id {
+			return &node
+		}
+	}
 	return nil
+}
+
+// ParseCredFile parses a yaml file containing a serialized Config.
+func ParseConfigFile(credFile string) (*Config, error) {
+	data, err := os.ReadFile(credFile)
+	if err != nil {
+		return nil, fmt.Errorf("error reading config file: %w", err)
+	}
+	c := &Config{
+		Credentials: &creds.Credentials{
+			Node: make(map[string]*creds.UserPass),
+		},
+	}
+	if err := yaml.Unmarshal(data, c); err != nil {
+		return nil, fmt.Errorf("error unmarshalling config YAML: %w", err)
+	}
+	for _, node := range c.Nodes {
+		c.Credentials.Node[node.Hostname] = &node.Credentials
+	}
+
+	return c, nil
 }

@@ -57,23 +57,35 @@ func (b *Bind) Reserve(ctx context.Context, tb *opb.Testbed, runTime time.Durati
 		ATEs: make(map[string]binding.ATE),
 	}
 
-	for node, _ := range b.cfg.Credentials.Node {
-		dims := &binding.Dims{
-			Name:            node,
-			Vendor:          opb.Device_DRIVENETS,
-			HardwareModel:   "",
-			SoftwareVersion: "",
-			Ports:           make(map[string]*binding.Port),
+	for _, dutInfo := range tb.Duts {
+		if dutInfo.Vendor != opb.Device_VENDOR_UNSPECIFIED &&
+			dutInfo.Vendor != opb.Device_DRIVENETS {
+			// not a Drivenets device; ignore
+			continue
 		}
 
-		dnDut := dnDUT{AbstractDUT: &binding.AbstractDUT{dims}, bind: b, cli: nil}
-		res.DUTs[node] = &dnDut
+		node := b.cfg.Lookup(dutInfo.Id)
+		if node == nil {
+			return nil, fmt.Errorf("missing credetials for dut %s", dutInfo.Id)
+		}
+
+		dims := &binding.Dims{
+			Name:            node.Hostname,
+			Vendor:          opb.Device_DRIVENETS,
+			HardwareModel:   node.HardwareModel,
+			SoftwareVersion: node.SoftwareVersion,
+			Ports:           make(map[string]*binding.Port),
+		}
+		res.DUTs[dutInfo.Id] = &dnDUT{
+			AbstractDUT: &binding.AbstractDUT{dims},
+			bind:        b,
+		}
 	}
 
 	return res, nil
 }
 
-// Release is a no-op because there's no need to reserve local VMs.
+// Release is a no-op because there's no need to release Drivenets devices.
 func (b *Bind) Release(context.Context) error {
 	return nil
 }
