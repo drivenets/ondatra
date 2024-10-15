@@ -79,11 +79,11 @@ func TestDrivenetsBinding(t *testing.T) {
 		t.Log(res.Output())
 
 		config := `interfaces
-					 ge100-0/0/0.123
-					   admin-state enabled
-					   vlan-id 123
-					 !
-				   !`
+                     ge100-0/0/0.123
+                       admin-state enabled
+                       vlan-id 123
+                     !
+                   !`
 		dut.PushConfig(ctx, config, false)
 
 		res, err = cli.RunCommand(ctx, "show interfaces ge100-0/0/0.123")
@@ -115,22 +115,22 @@ func TestDrivenetsVendorConfig(t *testing.T) {
 		config.NewVendorConfig(dut).
 			WithDrivenetsText(
 				`interfaces
-				   ge100-0/0/0.321
-				     admin-state enabled
-					 vlan-id 321
-				   !
-				 !`).
+                   ge100-0/0/0.321
+                     admin-state enabled
+                     vlan-id 321
+                   !
+                 !`).
 			Append(t)
 
 		// updates DUT config with replace config below
 		config.NewVendorConfig(dut).
 			WithDrivenetsText(
 				`interfaces
-				   ge100-0/0/0.{{ var "vlan" }}
-				     admin-state {{ var "state" }}
-					 vlan-id {{ var "vlan" }}
-				   !
-				 !`).
+                   ge100-0/0/0.{{ var "vlan" }}
+                     admin-state {{ var "state" }}
+                     vlan-id {{ var "vlan" }}
+                   !
+                 !`).
 			WithVarMap(map[string]string{
 				"vlan":  "888",
 				"state": "disabled",
@@ -145,22 +145,22 @@ func TestDrivenetsVendorConfig(t *testing.T) {
 			WithJuniperText(`should also skip this`).
 			WithDrivenetsText(
 				`interfaces
-				   ge100-0/0/0.333
-				     admin-state enabled
-					 vlan-id 333
-				   !
-				 !`).
+                   ge100-0/0/0.333
+                     admin-state enabled
+                     vlan-id 333
+                   !
+                 !`).
 			Append(t)
 
 		// replace DUT config with static config below
 		config.NewVendorConfig(dut).
 			WithDrivenetsText(
 				`interfaces
-				   ge100-0/0/0
-				     admin-state enabled
-					 description {{ var "desc" }}
-				   !
-				!`).
+                   ge100-0/0/0
+                     admin-state enabled
+                     description {{ var "desc" }}
+                   !
+                 !`).
 			WithVarValue("desc", "ondatra").
 			Push(t)
 

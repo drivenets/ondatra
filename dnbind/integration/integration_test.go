@@ -33,22 +33,22 @@ func TestDrivenetsConfig(t *testing.T) {
 	dut.Config().New().
 		WithDrivenetsText(
 			`interfaces
-				ge100-0/0/0.321
-					admin-state enabled
-					vlan-id 321
-				!
-				!`).
+               ge100-0/0/0.321
+                 admin-state enabled
+                 vlan-id 321
+               !
+             !`).
 		Append(t)
 
 	// updates DUT config with replace config below
 	dut.Config().New().
 		WithDrivenetsText(
 			`interfaces
-				ge100-0/0/0.{{ var "vlan" }}
-					admin-state {{ var "state" }}
-					vlan-id {{ var "vlan" }}
-				!
-				!`).
+               ge100-0/0/0.{{ var "vlan" }}
+                 admin-state {{ var "state" }}
+                 vlan-id {{ var "vlan" }}
+               !
+             !`).
 		WithVarMap(map[string]string{
 			"vlan":  "888",
 			"state": "disabled",
@@ -63,22 +63,22 @@ func TestDrivenetsConfig(t *testing.T) {
 		WithJuniperText(`should also skip this`).
 		WithDrivenetsText(
 			`interfaces
-				ge100-0/0/0.333
-					admin-state enabled
-					vlan-id 333
-				!
-				!`).
+               ge100-0/0/0.333
+                 admin-state enabled
+                 vlan-id 333
+               !
+             !`).
 		Append(t)
 
 	// replace DUT config with static config below
 	dut.Config().New().
 		WithDrivenetsText(
 			`interfaces
-				ge100-0/0/0
-					admin-state enabled
-					description {{ var "desc" }}
-				!
-			!`).
+               ge100-0/0/0
+                 admin-state enabled
+                 description {{ var "desc" }}
+               !
+             !`).
 		WithVarValue("desc", "ondatra").
 		Push(t)
 
