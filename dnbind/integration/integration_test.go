@@ -40,6 +40,17 @@ func TestDrivenetsConfig(t *testing.T) {
              !`).
 		Append(t)
 
+	// check duplicate commit
+	dut.Config().New().
+		WithDrivenetsText(
+			`interfaces
+               ge100-0/0/0.321
+                 admin-state enabled
+                 vlan-id 321
+               !
+             !`).
+		Append(t)
+
 	// updates DUT config with replace config below
 	dut.Config().New().
 		WithDrivenetsText(

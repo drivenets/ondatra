@@ -204,19 +204,12 @@ func (dut *dnDUT) PushConfig(ctx context.Context, config string, reset bool) err
 		commands = append(commands, "load override factory-default")
 	}
 	commands = append(commands, strings.Split(config, "\n")...)
+	commands = append(commands, []string{"commit check", "commit", "end"}...)
 
 	for _, command := range commands {
 		if err := check(dut.cli.RunCommand(ctx, command)); err != nil {
 			return err
 		}
-	}
-
-	if err := check(dut.cli.RunCommand(ctx, "commit check")); err != nil {
-		return err
-	}
-
-	if err := check(dut.cli.RunCommand(ctx, "commit and-exit")); err != nil {
-		return err
 	}
 
 	return nil
