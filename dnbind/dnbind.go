@@ -182,7 +182,7 @@ func (dut *dnDUT) PushConfig(ctx context.Context, config string, reset bool) err
 		return err
 	}
 
-	log.Infof("Pushing config: \"%s\"", config)
+	log.Infof("Pushing config:\n\"%s\"", config)
 
 	check := func(res binding.CommandResult, err error) error {
 		if err == nil && len(res.Error()) == 0 {
@@ -237,7 +237,8 @@ func (c *dnCLI) Close() error {
 }
 
 func (c *dnCLI) RunCommand(ctx context.Context, cmd string) (binding.CommandResult, error) {
-	if _, err := c.stdin.Write([]byte(cmd + "\n")); err != nil {
+	cmd = strings.Replace(cmd, "\t", " ", -1) + "\n"
+	if _, err := c.stdin.Write([]byte(cmd)); err != nil {
 		return nil, err
 	}
 
@@ -252,13 +253,13 @@ func (c *dnCLI) CommandResult(ctx context.Context) (r cmdResult, err error) {
 		if err != nil {
 			return r, err
 		}
+		log.Infof(string(buffer[:byteCount]))
 		lines := strings.Split(string(buffer[:byteCount]), "\n")
 
 		for _, line := range lines {
 			line = strings.TrimRight(line, " ")
 			if len(line) > 0 {
 				if line[len(line)-1:] == "#" {
-					log.Infof("DNOS prompt: %s\n", line)
 					return r, nil
 				}
 			}
