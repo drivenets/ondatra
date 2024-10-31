@@ -101,6 +101,10 @@ func (dut *dnDUT) DialCLI(ctx context.Context) (binding.CLIClient, error) {
 		return dut.cli, nil
 	}
 
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
 	up := dut.bind.cfg.Credentials.Node[dut.Name()]
 
 	var timeout time.Duration = 0
@@ -161,9 +165,10 @@ func (dut *dnDUT) DialCLI(ctx context.Context) (binding.CLIClient, error) {
 		default:
 			if err = dialCli(); err != nil {
 				dut.cli.Close()
+				dut.cli = nil
 				log.Errorf("%s: %s; retrying for %s\n", dut.Name(),
 					err, time.Until(deadline).Round(time.Millisecond))
-				time.Sleep(time.Millisecond * 1000)
+				time.Sleep(time.Second * 10)
 				break
 			}
 
