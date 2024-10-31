@@ -44,3 +44,73 @@ This repo includes an
 binding, a [testbed file](integration/testbed.textproto) for that test, and a
 [mock configuration file](integration/config.yaml) that is matched by the
 testbed.
+
+## Interactive Commands
+
+Operational commands requiring confirmation or user input of any kind are not supported by this API.
+
+### Disable Show commands pagination (Recommended)
+
+By running ```set cli-terminal-length 0``` as an initial step or apending ``` | no-more ``` to all show commands.  
+Paginated output leads to command getting stuck waiting for prompt.
+
+### List of unsupported commands
+
+- ‘run monitor ...’  
+- Any command followed by ```‘| monitor interval’```  
+  
+*Commands that exit from CLI:*
+- ‘exit’ 
+- ‘quit’ 
+ 
+*Interactive commands that initiate outbound connection and require user input:*
+- ‘run ssh ...’ 
+- ‘run ipmi ...’ 
+- ‘run start shell ...’  
+ 
+*Commands that require confirmation:*
+- GI: 
+    - ‘request system delete’
+    - ‘request system deploy’
+    - ‘request system install’
+    - ‘request system revert-stack’
+    - ‘request system target-stack ...’
+    - ‘request system tech-support ...’ ***can bypass using ‘force’ keyword***
+ 
+- DNOS:
+    - ‘load override golden-config'
+    - ‘request system tech-support ...’ ***can bypass using ‘force’ keyword***
+    - ‘request system restart factory-default' 
+    - ‘request file copy’ 
+    - ‘request file delete’ 
+    - ‘request interface management <xxx> access-list' 
+    - ‘request system delete’ 
+    - ‘request system generate golden-config' 
+    - ‘request system ncc switchover’ 
+    - ‘request system container restart’ 
+    - ‘request system process restart’ 
+    - ‘request system process stop’ 
+    - ‘request system restart <xxx>’ 
+    - ‘request system revert-stack' 
+    - ‘request system target-stack' 
+ 
+- Interactive configuration commands:  
+    - ‘system profile’
+ 
+- Configuration commands that take plain-text password value.  
+  Using plain-text option is interactive.  
+  If you want to configure password value, pass the encrypted password value instead
+    - ‘system aaa-server radius server password’ 
+    - ‘system login ipmi user password’ 
+    - ‘system login ncm user password’ 
+    - ‘system login user password’ 
+    - ‘system ntp authentication key-id' 
+    - ‘system snmp user authentication password’ 
+    - ‘protocols mpls traffic-engineering pcep authentication enabled password’ 
+    - ‘protocols ldp authentication md5 password’ 
+    - ‘protocols ldp neighbor <> authentication md5 password’ 
+    - ‘protocols ospf area <> interface <> authentication-key md5 key-id <> password’ 
+    - ‘protocols ospfv3 area <> authentication ipsec spi <> md5 password’ 
+    - ‘protocols ospfv3 area <> interface <> authentication ‘ 
+    - ‘system aaa-server tacacs server priority <> address <> password’ 
+    - ‘protocols bgp <> neighbor <> authentication md5 password’ 
