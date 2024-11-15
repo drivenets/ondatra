@@ -45,6 +45,26 @@ binding, a [testbed file](integration/testbed.textproto) for that test, and a
 [mock configuration file](integration/config.yaml) that is matched by the
 testbed.
 
+## Session idle timeout
+
+CLI might disconnect if idle for prolonged period of time.  
+One can disable session timeout be configuring: ```system login session-timeout 0```.  
+This does not affect active CLI connection, so for intendeed behaviour one must reconnect.
+
+Sample usage:  
+```golang
+  dut := ondatra.DUT(t, "dut")
+  // disable session timeout
+	dut.Config().New().
+		WithDrivenetsText(
+			`system login session-timeout 0
+            `).
+		Append(t)
+  dut := ondatra.DUT(t, "dut")
+  /* your code goes here with disabled session timeout */
+```
+
+
 ## Interactive Commands
 
 Operational commands requiring confirmation or user input of any kind are not supported by this API.
