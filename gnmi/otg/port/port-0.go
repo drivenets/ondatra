@@ -115,6 +115,100 @@ func (n *Port_InRatePathAny) State() ygnmi.WildcardQuery[float32] {
 	)
 }
 
+// Port_LastChangePath represents the /open-traffic-generator-port/ports/port/state/last-change YANG schema element.
+type Port_LastChangePath struct {
+	*ygnmi.NodePath
+	parent ygnmi.PathStruct
+}
+
+// Port_LastChangePathAny represents the wildcard version of the /open-traffic-generator-port/ports/port/state/last-change YANG schema element.
+type Port_LastChangePathAny struct {
+	*ygnmi.NodePath
+	parent ygnmi.PathStruct
+}
+
+// State returns a Query that can be used in gNMI operations.
+//
+//	Defining module:      "open-traffic-generator-port"
+//	Instantiating module: "open-traffic-generator-port"
+//	Path from parent:     "state/last-change"
+//	Path from root:       "/ports/port/state/last-change"
+func (n *Port_LastChangePath) State() ygnmi.SingletonQuery[uint64] {
+	return ygnmi.NewSingletonQuery[uint64](
+		"Port",
+		true,
+		false,
+		true,
+		true,
+		true,
+		false,
+		ygnmi.NewNodePath(
+			[]string{"state", "last-change"},
+			nil,
+			n.parent,
+		),
+		func(gs ygot.ValidatedGoStruct) (uint64, bool) {
+			ret := gs.(*oc.Port).LastChange
+			if ret == nil {
+				var zero uint64
+				return zero, false
+			}
+			return *ret, true
+		},
+		func() ygot.ValidatedGoStruct { return new(oc.Port) },
+		func() *ytypes.Schema {
+			return &ytypes.Schema{
+				Root:       &oc.Root{},
+				SchemaTree: oc.SchemaTree,
+				Unmarshal:  oc.Unmarshal,
+			}
+		},
+		nil,
+		nil,
+	)
+}
+
+// State returns a Query that can be used in gNMI operations.
+//
+//	Defining module:      "open-traffic-generator-port"
+//	Instantiating module: "open-traffic-generator-port"
+//	Path from parent:     "state/last-change"
+//	Path from root:       "/ports/port/state/last-change"
+func (n *Port_LastChangePathAny) State() ygnmi.WildcardQuery[uint64] {
+	return ygnmi.NewWildcardQuery[uint64](
+		"Port",
+		true,
+		false,
+		true,
+		true,
+		true,
+		false,
+		ygnmi.NewNodePath(
+			[]string{"state", "last-change"},
+			nil,
+			n.parent,
+		),
+		func(gs ygot.ValidatedGoStruct) (uint64, bool) {
+			ret := gs.(*oc.Port).LastChange
+			if ret == nil {
+				var zero uint64
+				return zero, false
+			}
+			return *ret, true
+		},
+		func() ygot.ValidatedGoStruct { return new(oc.Port) },
+		func() *ytypes.Schema {
+			return &ytypes.Schema{
+				Root:       &oc.Root{},
+				SchemaTree: oc.SchemaTree,
+				Unmarshal:  oc.Unmarshal,
+			}
+		},
+		nil,
+		nil,
+	)
+}
+
 // Port_LinkPath represents the /open-traffic-generator-port/ports/port/state/link YANG schema element.
 type Port_LinkPath struct {
 	*ygnmi.NodePath
@@ -547,6 +641,50 @@ func (n *PortPathAny) InRate() *Port_InRatePathAny {
 	ps := &Port_InRatePathAny{
 		NodePath: ygnmi.NewNodePath(
 			[]string{"state", "in-rate"},
+			map[string]interface{}{},
+			n,
+		),
+		parent: n,
+	}
+	return ps
+}
+
+// LastChange (leaf): The timestamp indicates the absolute time of the last
+// link state change of the test port (e.g., up-to-down transition).
+//
+// The value is the timestamp in nanoseconds relative to
+// the Unix Epoch (Jan 1, 1970 00:00:00 UTC).
+//
+//	Defining module:      "open-traffic-generator-port"
+//	Instantiating module: "open-traffic-generator-port"
+//	Path from parent:     "state/last-change"
+//	Path from root:       "/ports/port/state/last-change"
+func (n *PortPath) LastChange() *Port_LastChangePath {
+	ps := &Port_LastChangePath{
+		NodePath: ygnmi.NewNodePath(
+			[]string{"state", "last-change"},
+			map[string]interface{}{},
+			n,
+		),
+		parent: n,
+	}
+	return ps
+}
+
+// LastChange (leaf): The timestamp indicates the absolute time of the last
+// link state change of the test port (e.g., up-to-down transition).
+//
+// The value is the timestamp in nanoseconds relative to
+// the Unix Epoch (Jan 1, 1970 00:00:00 UTC).
+//
+//	Defining module:      "open-traffic-generator-port"
+//	Instantiating module: "open-traffic-generator-port"
+//	Path from parent:     "state/last-change"
+//	Path from root:       "/ports/port/state/last-change"
+func (n *PortPathAny) LastChange() *Port_LastChangePathAny {
+	ps := &Port_LastChangePathAny{
+		NodePath: ygnmi.NewNodePath(
+			[]string{"state", "last-change"},
 			map[string]interface{}{},
 			n,
 		),
