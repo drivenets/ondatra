@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/net/context"
@@ -109,16 +110,24 @@ func (b *Bind) Reserve(ctx context.Context, tb *opb.Testbed, runTime time.Durati
 		return nil, err
 	}
 	for i, dut := range res.DUTs {
-		kdut := &kneDUT{
-			ServiceDUT: dut.(*solver.ServiceDUT),
-			bind:       b,
-		}
-		res.DUTs[i] = kdut
-		if b.cfg.SkipReset {
-			continue
-		}
-		if err := kdut.resetConfig(ctx); err != nil {
-			return nil, err
+		if dut.Vendor() == opb.Device_DRIVENETS {
+			dnDut := &dnDUT{
+				ServiceDUT: dut.(*solver.ServiceDUT),
+				bind:       b,
+			}
+			res.DUTs[i] = dnDut
+		} else {
+			kdut := &kneDUT{
+				ServiceDUT: dut.(*solver.ServiceDUT),
+				bind:       b,
+			}
+			res.DUTs[i] = kdut
+			if b.cfg.SkipReset {
+				continue
+			}
+			if err := kdut.resetConfig(ctx); err != nil {
+				return nil, err
+			}
 		}
 	}
 	for i, ate := range res.ATEs {
@@ -133,6 +142,274 @@ func (b *Bind) Reserve(ctx context.Context, tb *opb.Testbed, runTime time.Durati
 // Release is a no-op because there's no need to reserve local VMs.
 func (b *Bind) Release(context.Context) error {
 	return nil
+}
+
+type dnDUT struct {
+	*solver.ServiceDUT
+	bind *Bind
+	cli  *dnCLI
+}
+
+var _ introspect.Introspector = (*dnDUT)(nil)
+
+func (d *dnDUT) Dialer(svc introspect.Service) (*introspect.Dialer, error) {
+	svcName, ok := solver.ServiceName(svc)
+	if !ok {
+		svcName = string(svc)
+		log.Warningf("Service %q has no known KNE name, trying %q", svc, svcName)
+	}
+	svcPB, ok := d.Services[svcName]
+	if !ok {
+		return nil, fmt.Errorf("service %q not found on DUT %q", svcName, d.Name())
+	}
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}))} // NOLINT
+	if creds := d.newRPCCredentials(); creds != nil {
+		opts = append(opts, grpc.WithPerRPCCredentials(creds))
+	}
+	return makeDialer(svcPB, opts...), nil
+}
+
+// newRPCCredentials determines the correct credentials used to access a node via rpc
+// from a given node name, node vendor, and knebind config. The precedence order for determining
+// the credentials is as follows:
+//
+// 1. credential provided for a specific node by name from the knebind config
+// 2. credential provided for a vendor of the node from the knebind config
+// 3. credential from the default username and password fields from the knebind config
+// 4. no credentials
+func (d *dnDUT) newRPCCredentials() *rpcCredentials {
+	cfg := d.bind.cfg
+	if userPass := cfg.Credentials.Lookup(d.Name(), d.NodeVendor); userPass != nil {
+		return &rpcCredentials{userPass}
+	}
+	// TODO(team): Deprecate username and password fields.
+	if cfg.Username != "" {
+		return &rpcCredentials{&creds.UserPass{Username: cfg.Username, Password: cfg.Password}}
+	}
+	return nil
+}
+
+func (d *dnDUT) dialGRPC(ctx context.Context, svc introspect.Service, opts []grpc.DialOption) (*grpc.ClientConn, error) {
+	dialer, err := d.Dialer(svc)
+	if err != nil {
+		return nil, err
+	}
+	log.Infof("Dialing service %q on DUT %s with options %v", svc, d.Name(), opts)
+	return dialer.Dial(ctx, opts...)
+}
+
+func (dut *dnDUT) DialCLI(ctx context.Context) (binding.CLIClient, error) {
+	if dut.cli != nil {
+		return dut.cli, nil
+	}
+
+	var err error
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
+	var timeout time.Duration = 0
+	deadline, ok := ctx.Deadline()
+	if ok {
+		timeout = time.Until(deadline)
+	}
+
+	s, err := dut.Service("ssh")
+	if err != nil {
+		return nil, err
+	}
+	addr := serviceAddr(s)
+
+	userPass := dut.newRPCCredentials()
+	if userPass == nil {
+		return nil, errors.New("RunCommand requires node credentials be provided")
+	}
+
+	c := &ssh.ClientConfig{
+		User:            userPass.Username,
+		Auth:            []ssh.AuthMethod{ssh.Password(userPass.Password)},
+		Timeout:         timeout,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          0,     // disable echoing
+		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
+		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+	}
+
+	dialCli := func() (err error) {
+		dut.cli = &dnCLI{}
+
+		if dut.cli.client, err = ssh.Dial("tcp", addr, c); err != nil {
+			return err
+		}
+
+		if dut.cli.session, err = dut.cli.client.NewSession(); err != nil {
+			return err
+		}
+
+		if err = dut.cli.session.RequestPty("xterm", 80, 40, modes); err != nil {
+			return err
+		}
+
+		if dut.cli.stdin, err = dut.cli.session.StdinPipe(); err != nil {
+			return err
+		}
+
+		if dut.cli.stdout, err = dut.cli.session.StdoutPipe(); err != nil {
+			return err
+		}
+
+		if err = dut.cli.session.Shell(); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, err
+		default:
+			if err = dialCli(); err != nil {
+				dut.cli.Close()
+				dut.cli = nil
+				log.Errorf("%s: %s; retrying for %s\n", dut.Name(),
+					err, time.Until(deadline).Round(time.Millisecond))
+				time.Sleep(time.Second * 10)
+				break
+			}
+
+			// wait for prompt
+			if _, err = dut.cli.CommandResult(ctx); err != nil {
+				return nil, err
+			}
+
+			return dut.cli, nil
+		}
+	}
+}
+
+func (d *dnDUT) DialGNMI(ctx context.Context, opts ...grpc.DialOption) (gpb.GNMIClient, error) {
+	conn, err := d.dialGRPC(ctx, introspect.GNMI, opts)
+	if err != nil {
+		return nil, err
+	}
+	return gpb.NewGNMIClient(conn), nil
+}
+
+func (d *dnDUT) DialGNOI(ctx context.Context, opts ...grpc.DialOption) (gnoigo.Clients, error) {
+	return nil, errors.New("GNOI is not supported on Drivenets DUT")
+}
+
+func (d *dnDUT) DialGNSI(ctx context.Context, opts ...grpc.DialOption) (binding.GNSIClients, error) {
+	return nil, errors.New("GNSI is not supported on Drivenets DUT")
+}
+
+func (d *dnDUT) DialGRIBI(ctx context.Context, opts ...grpc.DialOption) (grpb.GRIBIClient, error) {
+	return nil, errors.New("GRIBI is not supported on Drivenets DUT")
+}
+
+func (d *dnDUT) DialP4RT(ctx context.Context, opts ...grpc.DialOption) (p4pb.P4RuntimeClient, error) {
+	return nil, errors.New("P4RT is not supported on Drivenets DUT")
+}
+
+func (dut *dnDUT) PushConfig(ctx context.Context, config string, reset bool) error {
+	if _, err := dut.DialCLI(ctx); err != nil {
+		return err
+	}
+
+	log.Infof("Pushing config:\n\"%s\"", config)
+
+	check := func(res binding.CommandResult, err error) error {
+		if err == nil && len(res.Error()) == 0 {
+			return nil
+		}
+		// revert current changes
+		dut.cli.RunCommand(ctx, "rollback 0")
+		// exit configure menu
+		dut.cli.RunCommand(ctx, "end")
+		// propagate error or stderr
+		if err != nil {
+			return err
+		}
+		return errors.New(res.Error())
+	}
+
+	commands := []string{"configure"}
+	if reset {
+		commands = append(commands, "load override factory-default")
+	}
+	commands = append(commands, strings.Split(config, "\n")...)
+	commands = append(commands, []string{"commit check", "commit", "end"}...)
+
+	for _, command := range commands {
+		if err := check(dut.cli.RunCommand(ctx, command)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+type dnCLI struct {
+	*binding.AbstractCLIClient
+	client  *ssh.Client
+	session *ssh.Session
+	stdin   io.WriteCloser
+	stdout  io.Reader
+}
+
+func (c *dnCLI) Close() error {
+	if c.stdin != nil {
+		c.stdin.Close()
+	}
+	if c.session != nil {
+		c.session.Close()
+	}
+	if c.client != nil {
+		c.client.Close()
+	}
+	return nil
+}
+
+func (c *dnCLI) RunCommand(ctx context.Context, cmd string) (binding.CommandResult, error) {
+	cmd = strings.Replace(cmd, "\t", " ", -1) + "\n"
+	if _, err := c.stdin.Write([]byte(cmd)); err != nil {
+		return nil, err
+	}
+
+	return c.CommandResult(ctx)
+}
+
+func (c *dnCLI) CommandResult(ctx context.Context) (r *cmdResult, err error) {
+	buffer := make([]byte, 10000000)
+	r = &cmdResult{}
+
+	for {
+		byteCount, err := c.stdout.Read(buffer)
+		if err != nil {
+			return r, err
+		}
+		log.Infof(string(buffer[:byteCount]))
+		lines := strings.Split(string(buffer[:byteCount]), "\n")
+
+		for _, line := range lines {
+			line = strings.TrimRight(line, " \r")
+			if len(line) > 0 {
+				if line[len(line)-1:] == "#" {
+					return r, nil
+				}
+			}
+			r.output += line + "\n"
+			if strings.HasPrefix(line, "ERROR:") {
+				r.error = r.output
+				r.output = ""
+			}
+		}
+	}
 }
 
 type kneDUT struct {
